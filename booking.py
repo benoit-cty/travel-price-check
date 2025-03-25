@@ -13,15 +13,12 @@ import re
 import os
 import logging
 import shutil
-import nest_asyncio
+import threading
 from datetime import datetime
 from pyppeteer import launch
 from PyQt5.QtWidgets import QApplication, QMessageBox, QMainWindow, QTextEdit, QVBoxLayout, QPushButton, QWidget
-from PyQt5.QtCore import QObject, pyqtSignal, Qt, QTimer
+from PyQt5.QtCore import QObject, pyqtSignal, Qt, QTimer, QThread
 import signal
-
-# Apply nest_asyncio to allow nested event loops (required for asyncio inside Qt)
-nest_asyncio.apply()
 
 # Setup root logger without handlers initially
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
@@ -82,6 +79,28 @@ class LogWindow(QMainWindow):
             app.cleanup()
             app.quit()
 
+# Custom thread for running asyncio event loop
+class AsyncioThread(QThread):
+    def __init__(self, coro):
+        super().__init__()
+        self.coro = coro
+    
+    def run(self):
+        try:
+            # Create a new event loop for this thread
+            loop = asyncio.new_event_loop()
+            asyncio.set_event_loop(loop)
+            
+            # Run the coroutine
+            logger.info("Running async task in separate thread")
+            loop.run_until_complete(self.coro)
+            logger.info("Async task completed")
+        except Exception as e:
+            logger.exception(f"Error in AsyncioThread: {e}")
+        finally:
+            # Clean up the loop
+            loop.close()
+
 # travels
 travels = [
     {
@@ -125,13 +144,10 @@ class FlightMonitor(QApplication):
         # Set up signal handling directly in the class
         self.setup_signal_handling()
         
-        # Create asyncio loop
-        self.loop = asyncio.get_event_loop()
-        
         # Initial log message to verify logging works
         logger.info("Flight Monitor application initialized with GUI")
         
-        # Start the flight checking asynchronously with Qt timer
+        # Start the flight checking asynchronously
         self.start_async_check()
     
     def setup_logging(self):
@@ -187,29 +203,13 @@ class FlightMonitor(QApplication):
             logger.error(f"Error disconnecting VPN during cleanup: {vpn_error}")
 
     def start_async_check(self):
-        """Start the async check properly integrated with Qt event loop"""
+        """Start the async check in a separate thread"""
         logger.info("Preparing to start flight checks...")
         
-        # Use a QTimer to start the async process
-        QTimer.singleShot(100, self._execute_async_check)
-    
-    def _execute_async_check(self):
-        """Execute the async check in the event loop"""
-        logger.info("Starting flight checks...")
-        try:
-            # Schedule the coroutine in the event loop
-            future = asyncio.ensure_future(self.run_async_check())
-            # Add a callback to handle any exceptions
-            future.add_done_callback(self._check_future_result)
-        except Exception as e:
-            logger.exception(f"Error scheduling async task: {e}")
-
-    def _check_future_result(self, future):
-        """Check the result of the future to catch any unhandled exceptions"""
-        try:
-            future.result()
-        except Exception as e:
-            logger.exception(f"Unhandled exception in async task: {e}")
+        # Create and start a thread for running the asyncio event loop
+        self.async_thread = AsyncioThread(self.run_async_check())
+        self.async_thread.start()
+        logger.info("Async thread started")
 
     async def run_async_check(self):
         """Run the flight checks"""
@@ -492,14 +492,6 @@ class FlightMonitor(QApplication):
 if __name__ == "__main__":
     logger.info("Starting Flight Monitor application")
     try:
-        # Make sure we have the nest_asyncio dependency
-        try:
-            import nest_asyncio
-        except ImportError:
-            print("Installing required dependency: nest_asyncio")
-            subprocess.check_call([sys.executable, "-m", "pip", "install", "nest_asyncio"])
-            import nest_asyncio
-            
         app = FlightMonitor(sys.argv)
         print("Flight Monitor application started")
         signal.signal(signal.SIGINT, lambda s, f: app.quit())  # Enable Ctrl+C to gracefully quit
