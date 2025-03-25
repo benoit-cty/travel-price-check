@@ -14,9 +14,10 @@ import os
 import logging
 import shutil
 import threading
+import csv
 from datetime import datetime
 from pyppeteer import launch
-from PyQt5.QtWidgets import QApplication, QMessageBox, QMainWindow, QTextEdit, QVBoxLayout, QPushButton, QWidget
+from PyQt5.QtWidgets import QApplication, QMessageBox, QMainWindow, QTextEdit, QVBoxLayout, QPushButton, QWidget, QLabel
 from PyQt5.QtCore import QObject, pyqtSignal, Qt, QTimer, QThread
 import signal
 
@@ -67,10 +68,24 @@ class LogWindow(QMainWindow):
         self.log_widget = QTextEditLogger(self)
         layout.addWidget(self.log_widget.widget)
         
+        # Countdown label
+        self.countdown_label = QLabel("Next check: Not scheduled yet")
+        self.countdown_label.setAlignment(Qt.AlignCenter)
+        self.countdown_label.setStyleSheet("font-size: 14pt; font-weight: bold; color: #0066cc; padding: 8px;")
+        layout.addWidget(self.countdown_label)
+        
         # Stop button
         self.stop_button = QPushButton("Stop Monitor")
         self.stop_button.clicked.connect(self.stop_monitor)
         layout.addWidget(self.stop_button)
+        
+        # Timer to update the countdown
+        self.update_timer = QTimer(self)
+        self.update_timer.timeout.connect(self.update_countdown)
+        self.update_timer.start(1000)  # Update every second
+        
+        # Initialize next check time to None
+        self.next_check_time = None
     
     def stop_monitor(self):
         logger.info("Stop button clicked, shutting down...")
@@ -78,6 +93,29 @@ class LogWindow(QMainWindow):
         if app and hasattr(app, 'cleanup'):
             app.cleanup()
             app.quit()
+            
+    def update_countdown(self):
+        if self.next_check_time:
+            now = time.time()
+            remaining = max(self.next_check_time - now, 0)
+            
+            # Format the remaining time
+            minutes = int(remaining // 60)
+            seconds = int(remaining % 60)
+            
+            if minutes > 0:
+                self.countdown_label.setText(f"Next check in: {minutes} min {seconds} sec")
+            else:
+                self.countdown_label.setText(f"Next check in: {seconds} sec")
+                
+            # Change color when getting close to the next check
+            if remaining < 60:  # Less than a minute
+                self.countdown_label.setStyleSheet("font-size: 14pt; font-weight: bold; color: #cc3300; padding: 8px;")
+            else:
+                self.countdown_label.setStyleSheet("font-size: 14pt; font-weight: bold; color: #0066cc; padding: 8px;")
+    
+    def set_next_check_time(self, next_time):
+        self.next_check_time = next_time
 
 # Custom thread for running asyncio event loop
 class AsyncioThread(QThread):
@@ -127,6 +165,17 @@ DEBUG_MODE = True  # Set to False for production
 # Create debug folder
 debug_dir = "debug_output"
 os.makedirs(debug_dir, exist_ok=True)
+
+# CSV filename for price history
+price_history_csv = "flight_prices.csv"
+csv_headers = ["Date", "Time", "Flight", "Price_EUR", "Price_BRL", "Target_Price"]
+
+# Initialize CSV file with headers if it doesn't exist
+if not os.path.exists(price_history_csv):
+    with open(price_history_csv, 'w', newline='') as csvfile:
+        writer = csv.writer(csvfile)
+        writer.writerow(csv_headers)
+        logger.info(f"Created new price history CSV file: {price_history_csv}")
 
 class FlightMonitor(QApplication):
     def __init__(self, sys_args):
@@ -215,12 +264,42 @@ class FlightMonitor(QApplication):
         """Run the flight checks"""
         logger.info("Running async flight checks...")
         try:
-            await self.check_flights()
-            logger.info("Flight checks completed")
+            while True:  # Continue indefinitely until program is stopped
+                start_time = time.time()
+                logger.info(f"Starting flight price check at {time.strftime('%Y-%m-%d %H:%M:%S')}")
+                
+                await self.check_flights()
+                
+                logger.info(f"Flight checks completed at {time.strftime('%Y-%m-%d %H:%M:%S')}")
+                logger.info(f"Next check scheduled in {CHECK_INTERVAL} seconds ({CHECK_INTERVAL/60:.1f} minutes)")
+                
+                # Calculate how long to wait until next check
+                elapsed = time.time() - start_time
+                wait_time = max(CHECK_INTERVAL - elapsed, 0)
+                
+                if wait_time > 0:
+                    logger.info(f"Waiting {wait_time:.1f} seconds until next check...")
+                    self.log_window.set_next_check_time(time.time() + wait_time)
+                    await asyncio.sleep(wait_time)
+                
         except KeyboardInterrupt:
             logger.info("KeyboardInterrupt during async operation, cleaning up...")
         except Exception as e:
             logger.exception(f"Error during async check: {e}")
+
+    def save_price_to_csv(self, flight_info, price_eur, price_brl, max_price):
+        """Save flight price to CSV file"""
+        try:
+            current_date = datetime.now().strftime("%Y-%m-%d")
+            current_time = datetime.now().strftime("%H:%M:%S")
+            
+            with open(price_history_csv, 'a', newline='') as csvfile:
+                writer = csv.writer(csvfile)
+                writer.writerow([current_date, current_time, flight_info, f"{price_eur:.2f}", f"{price_brl:.2f}", max_price])
+            
+            logger.info(f"Saved price for {flight_info} to {price_history_csv}")
+        except Exception as e:
+            logger.error(f"Error saving price to CSV: {e}")
 
     async def check_flights(self):
         """Check prices for all flights in the travels list"""
@@ -455,11 +534,18 @@ class FlightMonitor(QApplication):
                                 continue
                 
                 if price:
-                    logger.info(f"Found price for {flight_info}: {price:.2f}")
+                    # Convert BRL to EUR using the specified conversion rate
+                    BRL_TO_EUR_RATE = 0.160929
+                    price_eur = price * BRL_TO_EUR_RATE
+                    
+                    # Save price to CSV
+                    self.save_price_to_csv(flight_info, price_eur, price, max_price)
+                    
+                    logger.info(f"Found price for {flight_info}: {price:.2f} BRL ({price_eur:.2f} EUR)")
                     if price < max_price:
-                        self.show_alert(price, max_price, flight_info)
+                        self.show_alert(price, max_price, flight_info, price_eur)
                     else:
-                        logger.info(f"Price for {flight_info} is above target: {price:.2f} (Target: {max_price})")
+                        logger.info(f"Price for {flight_info} is above target: {price:.2f} BRL / {price_eur:.2f} EUR (Target: {max_price} BRL)")
                 else:
                     logger.error(f"Price not found for flight {flight_info}")
                     
@@ -479,7 +565,7 @@ class FlightMonitor(QApplication):
         except Exception as e:
             logger.exception(f"Error checking flight {flight_info}: {e}")
 
-    def show_alert(self, price, max_price, flight_info):
+    def show_alert(self, price, max_price, flight_info, price_eur):
         """Show alert dialog for price drops"""
         msg = QMessageBox()
         msg.setIcon(QMessageBox.Information)
@@ -488,8 +574,9 @@ class FlightMonitor(QApplication):
         # Format large numbers with thousands separator for better readability
         formatted_price = f"{price:,.2f}".replace(",", " ")
         formatted_max_price = f"{max_price:,.2f}".replace(",", " ")
+        formatted_price_eur = f"{price_eur:,.2f}".replace(",", " ")
         
-        msg.setText(f"Flight {flight_info} price dropped to BRL {formatted_price}!\n(Threshold: BRL {formatted_max_price})")
+        msg.setText(f"Flight {flight_info} price dropped to BRL {formatted_price} ({formatted_price_eur} EUR)!\n(Threshold: BRL {formatted_max_price})")
         msg.exec_()
 
 if __name__ == "__main__":
