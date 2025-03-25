@@ -1,0 +1,14 @@
+[project]
+name = "flight-tikets"
+version = "0.1.0"
+description = "Add your description here"
+readme = "README.md"
+requires-python = ">=3.11"
+dependencies = [
+    "beautifulsoup4>=4.13.3",
+    "nest-asyncio>=1.6.0",
+    "psutil>=7.0.0",
+    "pyppeteer>=2.0.0",
+    "pyqt5>=5.15.11",
+    "requests>=2.32.3",
+]
