@@ -239,6 +239,9 @@ class FlightMonitor(QApplication):
             logger.info("Launching browser...")
             browser = await launch(
                 headless=True,  # Keep headless since it worked in the test
+                handleSIGINT=False,  # Disable SIGINT handling to avoid thread issues
+                handleSIGTERM=False,  # Disable SIGTERM handling to avoid thread issues
+                handleSIGHUP=False,  # Disable SIGHUP handling to avoid thread issues
                 args=[
                     '--no-sandbox',
                     '--disable-setuid-sandbox',
