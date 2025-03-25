@@ -1,0 +1,17 @@
+[
+  {
+    "flight": "SDU->BSB",
+    "url": "https://flights.booking.com/flights/SDU.AIRPORT-BSB.AIRPORT/?type=ONEWAY&adults=2&cabinClass=ECONOMY&children=12%2C12&from=SDU.AIRPORT&to=BSB.AIRPORT&fromCountry=BR&toCountry=BR&fromLocationName=Santos+Dumont+Airport&toLocationName=Brasilia+-+Presidente+Juscelino+Kubitschek+International+Airport&stops=0&depart=2025-04-20&sort=BEST&travelPurpose=leisure&ca_source=flights_search_sb",
+    "max_price": 1500
+  },
+  {
+    "flight": "BSB->SSA",
+    "url": "https://flights.booking.com/flights/BSB.AIRPORT-SSA.AIRPORT/?type=ONEWAY&adults=2&cabinClass=ECONOMY&children=12%2C12&from=BSB.AIRPORT&to=SSA.AIRPORT&fromCountry=BR&toCountry=BR&fromLocationName=Brasilia+-+Presidente+Juscelino+Kubitschek+International+Airport&toLocationName=Salvador+International+Airport&depart=2025-06-02&sort=BEST&travelPurpose=leisure&ca_source=flights_index_sb",
+    "max_price": 1700
+  },
+  {
+    "flight": "ORY->GIG, SSA->ORY",
+    "url": "https://flights.booking.com/flights/ORY.AIRPORT|SSA.AIRPORT-GIG.AIRPORT|ORY.AIRPORT/?type=MULTISTOP&adults=2&cabinClass=ECONOMY&children=12%2C12&from=ORY.AIRPORT%7CSSA.AIRPORT&to=GIG.AIRPORT%7CORY.AIRPORT&fromCountry=FR%7CBR&toCountry=BR%7CFR&fromLocationName=Paris+-+Orly+Airport%7CSalvador+International+Airport&toLocationName=Rio+de+Janeiro%2FGaleao+International+Airport%7CParis+-+Orly+Airport&stops=1&multiStopDates=2025-05-12%7C2025-06-10&sort=BEST&travelPurpose=leisure&ca_source=flights_search_sb",
+    "max_price": 27000
+  }
+]
