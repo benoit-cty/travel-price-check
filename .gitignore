@@ -9,3 +9,4 @@ wheels/
 # Virtual environments
 .venv
 debug_output/
+price_history/
